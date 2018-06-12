@@ -1,0 +1,74 @@
+{
+  "name": "hw-app-xmr",
+  "version": "0.0.1",
+  "description": "",
+  "main": "dist/hw-app-xmr.umd.js",
+  "module": "dist/hw-app-xmr.es6.js",
+  "typings": "src/index",
+  "scripts": {
+    "test": "jest",
+    "test:mem": "npm test -- --coverage --silent --logHeapUsage",
+    "test:watch": "jest --watch",
+    "test:prod": "npm run test -- --coverage --no-cache",
+    "test:prepublish": "npm run lint && npm run test -- --silent --no-cache",
+    "tsc": "tsc --noEmit -p ./tsconfig.json",
+    "format":
+      "find ./src/ -name '*.ts*' | xargs prettier --write --config ./.prettierrc --config-precedence file-override",
+    "remotedev": "remotedev --hostname=localhost --port=8000",
+    "lint": "tslint --project .",
+    "lint:fix": "tslint --project . --fix",
+    "prebuild": "rimraf dist",
+    "build":
+      "tsc -p ./tsconfig-build.json --module commonjs && rollup -c rollup.config.ts",
+    "prepublishOnly":
+      "rimraf node_modules && npm i && npm run tsc && npm run test:prepublish && npm run build",
+    "precommit": "lint-staged",
+    "report-coverage": " cat ./coverage/lcov.info | coveralls",
+    "prepush": "npm run lint && npm run tsc"
+  },
+  "lint-staged": {
+    "{src,__test__}/**/*.ts": ["npm run format", "npm run lint:fix", "git add"]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MyCryptoHQ/hw-app-xmr.git"
+  },
+  "author": "MyCrypto <henry@mycrypto.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/MyCryptoHQ/hw-app-xmr/issues"
+  },
+  "files": ["dist"],
+  "homepage": "https://github.com/MyCryptoHQ/hw-app-xmr#readme",
+  "devDependencies": {
+    "@types/jest": "^22.2.0",
+    "@types/node": "^9.4.6",
+    "coveralls": "^3.0.1",
+    "husky": "^0.14.3",
+    "jest": "^22.4.2",
+    "lint-staged": "^7.0.0",
+    "prettier": "^1.10.2",
+    "rollup": "^0.57.1",
+    "rollup-plugin-sourcemaps": "^0.4.2",
+    "rollup-plugin-typescript2": "^0.12.0",
+    "ts-jest": "^22.4.1",
+    "tslint": "^5.9.1",
+    "tslint-config-prettier": "^1.8.0",
+    "typescript": "^2.8.2"
+  },
+  "jest": {
+    "moduleFileExtensions": ["js", "jsx", "json", "ts", "tsx"],
+    "transform": {
+      "\\.(ts|tsx)$": "<rootDir>/node_modules/ts-jest/preprocessor.js"
+    },
+    "moduleNameMapper": {
+      "@src/(.*)": "<rootDir>/src/$1",
+      "@test/(.*)": "<rootDir>/__test__/$1"
+    },
+    "testRegex": "(/__tests__/.*|(\\.|/)(test|spec))\\.ts$",
+    "coveragePathIgnorePatterns": ["/node_modules/", "__test__"]
+  },
+  "dependencies": {
+    "u2f-api": "^1.0.6"
+  }
+}
