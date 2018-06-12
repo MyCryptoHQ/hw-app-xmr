@@ -12,6 +12,7 @@
     "array-type": [true, "array"],
     "no-duplicate-imports": true,
     "no-console": false,
+    "interface-name": false,
     "no-var-requires": false,
     "comment-format": false,
     "ordered-imports": true,
