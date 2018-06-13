@@ -73,11 +73,11 @@ export interface Device {
 
   /**
    *
-   *
-   * @param {string} pub
-   * @param {*} deriviation
-   * @param {number} output_index
-   * @returns {string} Derived public key Ks,i
+   * @description Derives a subaddress public key
+   * @param {string} pub K0
+   * @param {*} deriviation rKv
+   * @param {number} output_index t
+   * @returns {string} K0 - derivation_to_scalar(rkv,t).G
    * @memberof Device
    */
   derive_subaddress_public_key(
@@ -90,7 +90,7 @@ export interface Device {
    *
    *
    * @param {SecretKeys} keys Secret keypair [kv, ks]
-   * @param {number} index
+   * @param {number} index t
    * @returns {string} Ks,i
    * @memberof Device
    */
@@ -115,7 +115,7 @@ export interface Device {
 
   /**
    *
-   * @description Get a subaddress Ks,i
+   * @description Get a subaddress (Kv,i + Ks,i)
    * @param {IAccountKeys} keys
    * @param {number} index
    * @returns {PublicAddress}
@@ -126,7 +126,7 @@ export interface Device {
   /**
    *
    * @description Get a subaddress secret key `Hn(kv, i)`
-   * @param {SecretKey} sec
+   * @param {SecretKey} sec The secret key to derive the sub secret key from
    * @param {number} index
    * @returns {SecretKey}
    * @memberof Device
@@ -201,7 +201,7 @@ export interface Device {
    * additional_tx_pub_keys at the matching index
    * @link https://github.com/monero-project/monero/pull/3591
    * @see 5.3.1 Zero-to-monero
-   * Used for scanning txs to see if any txs are directed towards the users address
+   * Used when scanning txs to see if any txs are directed towards the users address
    * @ignore subaddresses
    * @param {PublicKey} deriviation e.g rKv
    * @param {PublicKey} tx_pub_key
