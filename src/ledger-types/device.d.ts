@@ -6,25 +6,52 @@ export enum DeviceMode {
 }
 
 // to later be converted to opaque types
-type PublicAddress = string;
-type SecretKey = string;
-type SecretKeys = [string, string];
-type ChachaKey = string;
-type PublicSpendKey = string;
-type PublicKey = string;
-type KeyPair = [string, string];
 type EcScalar = string;
+type EcPoint = string;
+
+type SecretKey = EcScalar;
+type PublicKey = EcPoint;
+
+type SecretKeys = [SecretKey, SecretKey];
+
+type KeyPair = [PublicKey, SecretKey];
+
+type KeyDerivation = EcPoint;
+
+type ChachaKey = string;
+type PublicSpendKey = PublicKey;
+interface PublicAddress {
+  view_public_key: PublicKey;
+  spend_public_key: PublicKey;
+}
+
 interface EcdhTuple {
   mask: string;
   amount: string;
 }
+
+interface CtKey {
+  dest: string;
+  mask: string;
+}
+
+type CtKeyV = CtKey[];
+type CtKeyM = CtKeyV[];
 type Key = PublicKey | SecretKey;
+type KeyV = Key[];
+type KeyM = KeyV[];
 // cryptonote_basic
 interface IAccountKeys {
-  m_account_address: string;
+  m_account_address: PublicAddress;
   m_spend_secret_key: string;
   m_view_secret_key: string;
   m_device: Device;
+}
+
+interface ISubaddressIndex {
+  major: number; // 32 bits
+  minor: number; // 32 bits
+  isZero(): boolean;
 }
 
 // device.hpp
@@ -37,7 +64,7 @@ export interface Device {
   /* ======================================================================= */
   set_name(name: string): boolean;
   get_name(): boolean;
-  set_mode(mode: DeviceMode): boolean;
+  set_mode(mode: DeviceMode): Promise<boolean>;
 
   /* ======================================================================= */
   /*                             WALLET & ADDRESS                            */
@@ -46,26 +73,26 @@ export interface Device {
   /**
    *
    * @description Get the public address (Kv + Ks) of an account
-   * @returns {PublicAddress}
+   * @returns {Promise<PublicAddress>}
    * @memberof Device
    */
-  get_public_address(): PublicAddress;
+  get_public_address(): Promise<PublicAddress>;
 
   /**
    *
    * @description Get secret keys [kv, ks] of an account
-   * @returns {SecretKeys}
+   * @returns {Promise<SecretKeys>}
    * @memberof Device
    */
-  get_secret_keys(): SecretKeys;
+  get_secret_keys(): Promise<SecretKeys>;
 
   /**
    *
    * @description Generate chacha key from kv and ks
-   * @returns {boolean}
+   * @returns {Promise<ChachaKey>}
    * @memberof Device
    */
-  generate_chacha_key(keys: IAccountKeys): ChachaKey;
+  generate_chacha_key(keys: IAccountKeys): Promise<ChachaKey>;
 
   /* ======================================================================= */
   /*                               SUB ADDRESS                               */
@@ -74,36 +101,39 @@ export interface Device {
   /**
    *
    * @description Derives a subaddress public key
-   * @param {string} pub K0
-   * @param {*} deriviation rKv
+   * @param {PublicKey} pub K0
+   * @param {KeyDerivation} derivation rKv
    * @param {number} output_index t
-   * @returns {string} K0 - derivation_to_scalar(rkv,t).G
+   * @returns {Promise<PublicKey>} K0 - derivation_to_scalar(rkv,t).G
    * @memberof Device
    */
   derive_subaddress_public_key(
-    pub: string,
-    deriviation: any,
+    pub: PublicKey,
+    derivation: KeyDerivation,
     output_index: number,
-  ): string;
+  ): Promise<PublicKey>;
 
   /**
    *
    *
    * @param {SecretKeys} keys Secret keypair [kv, ks]
-   * @param {number} index t
-   * @returns {string} Ks,i
+   * @param {ISubaddressIndex} index i
+   * @returns {Promise<string>} Ks,i
    * @memberof Device
    */
-  get_subaddress_spend_public_key(keys: IAccountKeys, index: number): string;
+  get_subaddress_spend_public_key(
+    keys: IAccountKeys,
+    index: ISubaddressIndex,
+  ): Promise<PublicKey>;
 
   /**
    *
    * @description Get an array of public subaddress spend keys Ks,i[]
    * @param {IAccountKeys} keys
-   * @param {number} account
-   * @param {number} begin
-   * @param {number} end
-   * @returns {PublicSpendKey[]}
+   * @param {number} account 32 bits
+   * @param {number} begin 32 bits
+   * @param {number} end 32 bits
+   * @returns {Promise<PublicSpendKey[]>}
    * @memberof Device
    */
   get_subaddress_spend_public_keys(
@@ -111,27 +141,30 @@ export interface Device {
     account: number,
     begin: number,
     end: number,
-  ): PublicSpendKey[];
+  ): Promise<PublicSpendKey>[];
 
   /**
    *
    * @description Get a subaddress (Kv,i + Ks,i)
    * @param {IAccountKeys} keys
-   * @param {number} index
-   * @returns {PublicAddress}
+   * @param {ISubaddressIndex} index i
+   * @returns {Promise<PublicAddress>}
    * @memberof Device
    */
-  get_subaddress(keys: IAccountKeys, index: number): PublicAddress;
+  get_subaddress(
+    keys: IAccountKeys,
+    index: ISubaddressIndex,
+  ): Promise<PublicAddress>;
 
   /**
    *
    * @description Get a subaddress secret key `Hn(kv, i)`
    * @param {SecretKey} sec The secret key to derive the sub secret key from
    * @param {number} index
-   * @returns {SecretKey}
+   * @returns {Promise<SecretKey>}
    * @memberof Device
    */
-  get_subaddress_secret_key(sec: SecretKey, index: number): SecretKey;
+  get_subaddress_secret_key(sec: SecretKey, index: number): Promise<SecretKey>;
 
   /* ======================================================================= */
   /*                            DERIVATION & KEY                             */
@@ -142,93 +175,99 @@ export interface Device {
    * @description Verifies that a keypair [k, K] are valid
    * @param {SecretKey} secretKey
    * @param {PublicKey} publicKey
-   * @returns {boolean}
+   * @returns {Promise<boolean>}
    * @memberof Device
    */
-  verify_keys(secretKey: SecretKey, publicKey: PublicKey): boolean;
+  verify_keys(secretKey: SecretKey, publicKey: PublicKey): Promise<boolean>;
 
   /**
    * @description Variable-base scalar multiplications for some integer a, and point P: aP (VBSM)
-   * @param {string} P
-   * @param {string} a
-   * @returns {string} aP
+   * @param {Key} P
+   * @param {Key} a
+   * @returns {Promise<Key>} aP
    * @memberof Device
    */
-  scalarmultKey(P: string, a: string): string;
+  scalarmultKey(P: Key, a: Key): Promise<Key>;
 
   /**
    * @description Known-base scalar multiplications for some integer a: aG (KBSM)
-   * @param {string} a
-   * @returns {string} aG
+   * @param {Key} a
+   * @returns {Promise<Key>} aG
    * @memberof Device
    */
-  scalarmultBase(a: string): string;
+  scalarmultBase(a: Key): Promise<Key>;
 
   /**
    *
    * @description Scalar addition (each private key is a scalar) a + b = r
-   * @param {string} a
-   * @param {string} b
-   * @returns {string} r
+   * @param {SecretKey} a
+   * @param {SecretKey} b
+   * @returns {Promise<string>} r
    * @memberof Device
    */
-  sc_secret_add(a: string, b: string): string;
+  sc_secret_add(a: SecretKey, b: SecretKey): Promise<SecretKey>;
 
   /**
    * @description Generates a keypair (R, r), leave recovery key undefined for a random key pair
    * @param {SecretKey} recoveryKey
-   * @returns {KeyPair}
+   * @returns {Promise<KeyPair>}
    * @memberof Device
    */
-  generate_keys(recoveryKey: SecretKey | undefined): KeyPair;
+  generate_keys(recoveryKey: SecretKey | undefined): Promise<KeyPair>;
 
   /**
    *
-   * @description Generates a key deriviation,
+   * @description Generates a key derivation,
    * can be used to generate ephemeral_(pub|sec) which is the one-time keypair
    * @param {PublicKey} pub Ex. rG, a transaction public key
    * @param {SecretKey} sec Ex. kv, a secret view key
-   * @returns {string} Derived Key Ex. rG.kv -> rKv
+   * @returns {Promise<KeyDerivation>} Derived Key Ex. rG.kv -> rKv
    * @memberof Device
    */
-  generate_key_derivation(pub: PublicKey, sec: SecretKey): PublicKey;
+  generate_key_derivation(
+    pub: PublicKey,
+    sec: SecretKey,
+  ): Promise<KeyDerivation>;
 
   /**
-   * @description Conceals a deriviation, used when a clear text deriviation needs to be encrypted so it can
-   * later be used by other device methods since they only allow encrypted deriviations as input
-   * If the main deriviation matches the deriviation, then the concealed deriviation of the tx_pub_key is returned,
-   * otherwise additional_deriviations is scanned through for a matching deriviation, then the matching index is used to return the concealed
+   * @description Conceals a derivation, used when a clear text derivation needs to be encrypted so it can
+   * later be used by other device methods since they only allow encrypted derivations as input
+   * If the main derivation matches the derivation, then the concealed derivation of the tx_pub_key is returned,
+   * otherwise additional_derivations is scanned through for a matching derivation, then the matching index is used to return the concealed
    * additional_tx_pub_keys at the matching index
    * @link https://github.com/monero-project/monero/pull/3591
    * @see 5.3.1 Zero-to-monero
    * Used when scanning txs to see if any txs are directed towards the users address
    * @ignore subaddresses
-   * @param {PublicKey} deriviation e.g rKv
+   * @param {KeyDerivation} derivation e.g rKv
    * @param {PublicKey} tx_pub_key
    * @param {PublicKey[]} additional_tx_pub_keys used for multi-destination transfers involving one or more subaddresses
-   * @param {PublicKey} main_deriviation
-   * @param {PublicKey[]} additional_derivations used for multi-destination transfers involving one or more subaddresses
-   * @returns {PublicKey}
+   * @param {KeyDerivation} main_derivation
+   * @param {KeyDerivation[]} additional_derivations used for multi-destination transfers involving one or more subaddresses
+   * @returns {Promise<PublicKey>}
    * @memberof Device
    */
   conceal_derivation(
-    deriviation: PublicKey,
+    derivation: KeyDerivation,
     tx_pub_key: PublicKey,
     additional_tx_pub_keys: PublicKey[],
-    main_deriviation: PublicKey,
-    additional_derivations: PublicKey[],
-  ): PublicKey;
+    main_derivation: KeyDerivation,
+    additional_derivations: KeyDerivation[],
+  ): Promise<PublicKey>;
 
   /**
    *
    * @description Transforms a derivation to a scalar based on an index
    * Used for multi output transactions and subaddresses
-   * @param {PublicKey} deriviation e.g rKv
+   * @param {KeyDerivation} derivation e.g rKv
    * @param {number} output_index t
-   * @returns {EcScalar} e.g Hn(rKvt, t)
+   * @returns {Promise<EcScalar>} e.g Hn(rKvt, t)
    * @memberof Device
    */
-  derivation_to_scalar(deriviation: PublicKey, output_index: number): EcScalar;
+  derivation_to_scalar(
+    derivation: KeyDerivation,
+    output_index: number,
+  ): Promise<EcScalar>;
 
   /**
    *
@@ -236,17 +275,17 @@ export interface Device {
    * Used to derive an emphemeral (one-time) secret key at index t which then can be used to spend an output or, generate a key image (kHp(K)) when combined
    * when the corresponding public key
    * @see 5.2.1 Zero-to-monero
-   * @param {PublicKey} deriviation e.g rKv
+   * @param {KeyDerivation} derivation e.g rKv
    * @param {number} output_index e.g t
    * @param {SecretKey} sec e.g ks, a private spend key
-   * @returns {SecretKey} e.g k0, where k0 = Hn(rKv,t) + ks
+   * @returns {Promise<SecretKey>} e.g k0, where k0 = Hn(rKv,t) + ks
    * @memberof Device
    */
   derive_secret_key(
-    deriviation: PublicKey,
+    derivation: KeyDerivation,
     output_index: number,
     sec: SecretKey,
-  ): SecretKey;
+  ): Promise<SecretKey>;
 
   /**
    *
@@ -254,36 +293,36 @@ export interface Device {
    * Used to derive an emphemeral (one-time) public key at index t which then can be used check if a transaction belongs to
    * the public key, or generate a key image (kHp(K)) when combined with the corresponding private key
    * @see 5.2.1 Zero-to-monero
-   * @param {PublicKey} deriviation e.g rKv
+   * @param {KeyDerivation} derivation e.g rKv
    * @param {number} output_index e.g t
    * @param {SecretKey} pub e.g Ks, a public spend key
-   * @returns {SecretKey} e.g k0, where k0 = Hn(rKv,t) + Ks
+   * @returns {Promise<SecretKey>} e.g k0, where k0 = Hn(rKv,t) + Ks
    * @memberof Device
    */
   derive_public_key(
-    deriviation: PublicKey,
+    derivation: KeyDerivation,
     output_index: number,
     pub: PublicKey,
-  ): PublicKey;
+  ): Promise<PublicKey>;
 
   /**
    *
    * @description Generates a public key from a secret key
    * @param {SecretKey} sec e.g k
-   * @returns {PublicKey} e.g K where K = kG
+   * @returns {Promise<PublicKey>} e.g K where K = kG
    * @memberof Device
    */
-  secret_key_to_public_key(sec: SecretKey): PublicKey;
+  secret_key_to_public_key(sec: SecretKey): Promise<PublicKey>;
 
   /**
    *
    * @description Generates key image kHp(K)
    * @param {PublicKey} pub K
    * @param {SecretKey} sec k
-   * @returns {PublicKey} kHp(K)
+   * @returns {Promise<PublicKey>} kHp(K)
    * @memberof Device
    */
-  generate_key_image(pub: PublicKey, sec: SecretKey): PublicKey;
+  generate_key_image(pub: PublicKey, sec: SecretKey): Promise<PublicKey>;
 
   /* ======================================================================= */
   /*                               TRANSACTION                               */
@@ -291,11 +330,11 @@ export interface Device {
 
   /**
    *
-   * @description First step of creating a transaction, returns the secret tx key
-   * @returns {SecretKey}
+   * @description First step of creating a transaction, returns tPromise<he secret tx ke>y
+   * @returns {Promise<SecretKey>}
    * @memberof Device
    */
-  open_tx(): SecretKey;
+  open_tx(): Promise<SecretKey>;
 
   /**
    *
@@ -303,14 +342,14 @@ export interface Device {
    * @param {string} paymentId
    * @param {string} public_key Kv
    * @param {string} secret_key r
-   * @returns {string} encrypted payment id = XOR (Hn( generate_key_deriviation(r, Kv) , ENCRYPTED_PAYMENT_ID_TAIL), paymentId)
+   * @returns {Promise<string>} encrypted payment id = XOR (Hn( generate_key_derivation(r, Kv) , ENCRYPTED_PAYMENT_ID_TAIL), paymentId)
    * @memberof Device
    */
   encrypt_payment_id(
     paymentId: string,
     public_key: string,
     secret_key: string,
-  ): string;
+  ): Promise<string>;
 
   /**
    *
@@ -318,14 +357,14 @@ export interface Device {
    * @param {string} paymentId
    * @param {string} public_key
    * @param {string} secret_key
-   * @returns {string} Decrypted payment id = encrypt_payment_id(payment_id, public_key, secret_key) since its a XOR operation
+   * @returns {Promise<string>} Decrypted payment id = encrypt_payment_id(payment_id, public_key, secret_key) since its a XOR operation
    * @memberof Device
    */
   decrypt_payment_id(
     paymentId: string,
     public_key: string,
     secret_key: string,
-  ): string;
+  ): Promise<string>;
 
   /**
    *
@@ -333,10 +372,10 @@ export interface Device {
    * where C= aG + bH
    * @param {EcdhTuple} unmasked The unmasked ecdh tuple to encode using the shared secret
    * @param {string} sharedSec e.g sharedSec = derivation_to_scalar(rKv,t)
-   * @returns {EcdhTuple}
+   * @returns {Promise<EcdhTuple>}
    * @memberof Device
    */
-  ecdhEncode(unmasked: EcdhTuple, sharedSec: SecretKey): EcdhTuple;
+  ecdhEncode(unmasked: EcdhTuple, sharedSec: SecretKey): Promise<EcdhTuple>;
 
   /**
    *
@@ -344,10 +383,10 @@ export interface Device {
    * where C= aG + bH
    * @param {EcdhTuple} masked The masked ecdh tuple to decude using the shared secret
    * @param {SecretKey} sharedSec e.g sharedSec = derivation_to_scalar(rKv,t)
-   * @returns {EcdhTuple}
+   * @returns {Promise<EcdhTuple>}
    * @memberof Device
    */
-  ecdhDecode(masked: EcdhTuple, sharedSec: SecretKey): EcdhTuple;
+  ecdhDecode(masked: EcdhTuple, sharedSec: SecretKey): Promise<EcdhTuple>;
 
   /**
    * @description store keys during construct_tx_with_tx_key to be later used during genRct ->  mlsag_prehash
@@ -357,7 +396,7 @@ export interface Device {
    * @param {number} real_output_index
    * @param {Key} amount_key
    * @param {PublicKey} out_eph_public_key
-   * @returns {boolean}
+   * @returns {Promise<boolean>}
    * @memberof Device
    */
   add_output_key_mapping(
@@ -367,5 +406,81 @@ export interface Device {
     real_output_index: number,
     amount_key: Key,
     out_eph_public_key: PublicKey,
-  ): boolean;
+  ): Promise<boolean>;
+
+  /**
+   *
+   * @description Compute the mlsag prehash
+   * @param {string} blob
+   * @param {number} inputs_size
+   * @param {number} outputs_size
+   * @param {KeyV} hashes
+   * @param {CtKeyV} outPk
+   * @returns {Promise<Key>} mlsag prehash
+   * @memberof Device
+   */
+  mlsag_prehash(
+    blob: string,
+    inputs_size: number,
+    outputs_size: number,
+    hashes: KeyV,
+    outPk: CtKeyV,
+  ): Promise<Key>;
+
+  /**
+   *
+   * @description To be filled in
+   * @param {Key} H
+   * @param {Key} xx
+   * @returns {Promise<{ a: Key, aG: Key, aHP: Key, II: Key }>}
+   * @memberof Device
+   */
+  mlsag_prepare(
+    H: Key,
+    xx: Key,
+  ): Promise<{ a: Key; aG: Key; aHP: Key; II: Key }>;
+
+  /**
+   *
+   * @description To be filled in
+   * @returns {Promise<{ a: Key, aG: Key }>}
+   * @memberof Device
+   */
+  mlsag_prepare(): Promise<{ a: Key; aG: Key }>;
+
+  /**
+   *
+   * @description To be filled in
+   * @param {KeyV} long_message
+   * @returns {Promise<Key>} c
+   * @memberof Device
+   */
+  mlsag_hash(long_message: KeyV): Promise<Key>;
+
+  /**
+   *
+   * @description To be filled in
+   * @param {key} c
+   * @param {KeyV} xx
+   * @param {KeyV} alpha
+   * @param {number} rows
+   * @param {number} dsRows
+   * @returns {Promise<KeyV>} ss
+   * @memberof Device
+   */
+  mlsag_sign(
+    c: Key,
+    xx: KeyV,
+    alpha: KeyV,
+    rows: number,
+    dsRows: number,
+  ): Promise<KeyV>;
+
+  /**
+   *
+   * @description Finalize tx on device
+   * @returns {Promise<boolean>}
+   * @memberof Device
+   */
+  close_tx(): Promise<boolean>;
 }
