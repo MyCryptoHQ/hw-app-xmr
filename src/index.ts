@@ -66,8 +66,9 @@ export default class XMR<T> {
     switch (mode) {
       case DeviceMode.TRANSACTION_CREATE_REAL:
       case DeviceMode.TRANSACTION_CREATE_FAKE:
-        this.mode = mode;
         await this.send(INS.SET_SIGNATURE_MODE, 0x01, 0x00, [0x00, mode]);
+        this.mode = mode;
+
         break;
 
       case DeviceMode.TRANSACTION_PARSE:
