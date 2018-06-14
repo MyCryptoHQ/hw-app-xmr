@@ -244,11 +244,15 @@ declare module '@ledgerhq/hw-transport' {
     public setExchangeTimeout?(exchangeTimeout: number): void;
 
     /**
-     * @description wrapper on top of exchange to simplify work of the implementation.
-     * @param cla
-     * @param ins
-     * @param p1
-     * @param p2
+     * @description Wrapper on top of exchange to simplify work of the implementation.
+     * Note that `LC` is implicity calculated within the function, since JS can calculate the byte length
+     * of data on its own
+     * @param cla Class
+     * @param ins Command
+     * @param p1 Sub Command
+     * @param p2 Command / Sub Command counter, when a Command / Sub Command can be sent repeatedly, the counter must be
+     * increased by one at each command. The flag `last sub command indicator` must be set to indicate another command
+     * will be sent.
      * @param data A buffer of data, default empty buffer
      * @param statusList is a list of accepted status code (shorts). [0x9000] by default (StatusCodes.ok)
      * @return a Promise of response buffer
