@@ -31,6 +31,7 @@
     "no-mergeable-namespace": true,
     "strict-type-predicates": true,
     "prefer-conditional-expression": true,
-    "variable-name": false
+    "variable-name": false,
+    "no-bitwise": false
   }
 }
