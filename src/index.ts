@@ -1,27 +1,70 @@
 import Transport from '@ledgerhq/hw-transport';
 import {
   ChachaKey,
+  CtKeyV,
   DeviceMode,
+  EcdhTuple,
   EcScalar,
+  Hash8,
   IAccountKeys,
   ISubaddressIndex,
   Key,
   KeyDerivation,
+  KeyV,
   PublicAddress,
   PublicKey,
   SecretKey,
 } from '@src/ledger-types/device';
+
+enum RCT {
+  RCTTypeNull = 0x00,
+  RCTTypeFull = 0x01,
+  RCTTypeSimple = 0x02,
+  RCTTypeFullBulletproof = 0x03,
+  RCTTypeSimpleBulletproof = 0x04,
+}
 
 type AnyFunc = (...args: any[]) => any;
 interface InjectedFunctions {
   generate_chacha_key_prehashed: AnyFunc;
   derive_subaddress_public_key: AnyFunc;
   generate_key_derivation: AnyFunc;
+  // all this does is typecast crypto::private_key -> rct::key
+  pk2rct: AnyFunc;
 }
 
 type ArrLike = (number | string)[] | Buffer;
 
-// tslint:disable-next-line:no-default-export
+interface IABPKeys {
+  Aout: Key;
+  Bout: Key;
+  is_subaddress: boolean;
+
+  index: number; // size_t
+  Pout: Key; // search by this property
+  AKout: Key;
+}
+
+class Keymap {
+  private map: { [Pout: string]: IABPKeys | undefined } = {};
+  public add(keys: IABPKeys) {
+    if (this.map[keys.Pout]) {
+      throw Error(`Cannot add key to map, Pout: ${keys.Pout} already exists`);
+    }
+    this.map[keys.Pout] = keys;
+  }
+
+  public find(Pout: Key) {
+    return this.map[Pout];
+  }
+
+  public clear() {
+    this.map = {};
+  }
+}
+
+// tslint:disable:no-default-export
+// tslint:disable-next-line:max-classes-per-file
 export default class XMR<T> {
   private readonly transport: Transport<T>;
   private name: string;
@@ -30,6 +73,8 @@ export default class XMR<T> {
   private has_view_key: boolean;
   private readonly extern: InjectedFunctions;
   private readonly null_skey = this.hexString();
+  private readonly key_map = new Keymap();
+
   constructor(transport: Transport<T>, injectedFuncs: InjectedFunctions) {
     this.transport = transport;
     this.name = '';
@@ -126,7 +171,7 @@ export default class XMR<T> {
     return [vkey, skey];
   }
 
-  public async generate_chacha_key(keys: IAccountKeys): Promise<ChachaKey> {
+  public async generate_chacha_key(_keys: IAccountKeys): Promise<ChachaKey> {
     const [prekey] = await this.send(
       INS.GET_CHACHA8_PREKEY,
       0x00,
@@ -275,11 +320,17 @@ export default class XMR<T> {
       [1, 2, 3, 4],
     ).then(arr => arr.map(str => parseInt(str, 16)));
 
-    const verified =
-      (verifyArr[0] << 24) |
-      (verifyArr[1] << 16) |
-      (verifyArr[2] << 8) |
-      (verifyArr[3] << 0);
+    // TODO: support full 32 bit return value in the future
+    // for any verification return value changes
+    // but for now, we just need to check the last 4 bytes
+    // to see if the last bit is 1 or not
+    // const verified =
+    // (verifyArr[0] << 24) |
+    // (verifyArr[1] << 16) |
+    // (verifyArr[2] << 8) |
+    // (verifyArr[3] << 0);
+
+    const verified = verifyArr[3];
 
     return verified === 1;
   }
@@ -482,7 +533,268 @@ export default class XMR<T> {
     );
     return pub;
   }
+
+  public async generate_key_image(
+    pub: PublicKey,
+    sec: SecretKey,
+  ): Promise<PublicKey> {
+    const [ki] = await this.send(
+      INS.GEN_KEY_IMAGE,
+      0x00,
+      0x00,
+      [0x00, pub, sec],
+      [32],
+    );
+    return ki;
+  }
   // #endregion DERIVATION & KEY
+
+  /* ======================================================================= */
+  /*                               TRANSACTION                               */
+  /* ======================================================================= */
+  // #region TRANSACTION
+  public async open_tx(): Promise<SecretKey> {
+    const options = 0x00;
+
+    const account = [0x00, 0x00, 0x00, 0x00];
+
+    // skip over R and grab encrypted r instead
+    const [, enc_r] = await this.send(
+      INS.OPEN_TX,
+      0x01,
+      0x00,
+      [options, ...account],
+      [32, 64],
+    );
+
+    const sec_tx_key = enc_r;
+
+    return sec_tx_key;
+  }
+
+  public async encrypt_payment_id(
+    paymentId: string,
+    public_key: string,
+    secret_key: string,
+  ): Promise<Hash8> {
+    const [enc_pid] = await this.send(
+      INS.STEALTH,
+      0x00,
+      0x00,
+      [0x00, public_key, secret_key, paymentId],
+      [8],
+    );
+    return enc_pid;
+  }
+
+  public async decrypt_payment_id(
+    paymentId: string,
+    public_key: string,
+    secret_key: string,
+  ): Promise<Hash8> {
+    return await this.encrypt_payment_id(paymentId, public_key, secret_key);
+  }
+
+  /**
+   * @description store keys during construct_tx_with_tx_key to be later used during genRct ->  mlsag_prehash
+   * @param {PublicKey} Aout
+   * @param {PublicKey} Bout
+   * @param {boolean} is_subaddress
+   * @param {number} real_output_index
+   * @param {Key} amount_key
+   * @param {PublicKey} out_eph_public_key
+   * @returns {Promise<boolean>}
+   */
+  public add_output_key_mapping(
+    Aout: PublicKey,
+    Bout: PublicKey,
+    is_subaddress: boolean,
+    real_output_index: number,
+    amount_key: Key,
+    out_eph_public_key: PublicKey,
+  ): boolean {
+    const shouldThrow = true;
+    if (shouldThrow) {
+      throw Error('Needs big integer support');
+    }
+
+    this.key_map.add({
+      Aout: this.extern.pk2rct(Aout),
+      Bout: this.extern.pk2rct(Bout),
+      is_subaddress,
+      index: real_output_index,
+      Pout: this.extern.pk2rct(out_eph_public_key),
+      AKout: amount_key,
+    });
+
+    return true;
+  }
+
+  public async ecdhEncode(
+    unmasked: EcdhTuple,
+    AKout: SecretKey,
+  ): Promise<EcdhTuple> {
+    // AKout -> Amount key for output
+    // AKout = encrypted private derivation data computed during the processing of output transaction keys
+    // derivation data  = generate_key_derivation(Kv (recipent view public key), r (tx_key) ) = r.Kv
+    // scalar = hash_to_scalar(Kv.r)
+    // AKout = rct::sk2rct(Hn(rKv)) where rct::sk2rct just typecasts type crypto::secret_key to rct::key
+    const [blindAmount, blindMask] = await this.send(
+      INS.BLIND,
+      0x00,
+      0x00,
+      [0x00, AKout, unmasked.mask, unmasked.amount],
+      [32, 64],
+    );
+
+    return { amount: blindAmount, mask: blindMask };
+  }
+
+  public async ecdhDecode(
+    masked: EcdhTuple,
+    AKout: SecretKey,
+  ): Promise<EcdhTuple> {
+    const [unmaskedAmount, unmaskedMask] = await this.send(
+      INS.UNBLIND,
+      0x00,
+      0x00,
+      [0x00, AKout, masked.mask, masked.amount],
+      [32, 64],
+    );
+    return { amount: unmaskedAmount, mask: unmaskedMask };
+  }
+
+  public async mlsag_prehash(
+    blob: string,
+    inputs_size: number, // 64 bits
+    outputs_size: number, // 64 bits
+    hashes: KeyV,
+    outPk: CtKeyV,
+  ): Promise<Key> {
+    const shouldThrow = true;
+    if (shouldThrow) {
+      throw Error('Needs big integer support');
+    }
+
+    const data = Buffer.from(blob, 'hex');
+
+    const options = inputs_size === 0 ? 0x00 : 0x80;
+    const type = data[0];
+    const txnFee: number[] = [];
+    let data_offset = 1;
+
+    while (data[data_offset] & 0x80) {
+      txnFee.push(data[data_offset], 16);
+      data_offset += 1;
+    }
+    // monero_apdu_mlsag_prehash_init p2 === 1
+    await this.send(INS.VALIDATE, 0x01, 0x01, [
+      options,
+      type,
+      ...txnFee,
+      data[data_offset],
+    ]);
+
+    data_offset += 1;
+
+    // monero_apdu_mlsag_prehash_init p2 > 1
+    // pseudoOuts
+    if (type === RCT.RCTTypeSimple || type === RCT.RCTTypeSimpleBulletproof) {
+      for (let i = 0; i < inputs_size; i++) {
+        const ins = INS.VALIDATE;
+        const p1 = 0x01;
+        const p2 = i + 0x02;
+        const opts = i === inputs_size - 1 ? 0x00 : 0x80;
+        // slice 32 bytes starting from data_offset
+        const pseudoOut = data
+          .slice(data_offset, data_offset + 32)
+          .toString('hex');
+
+        await this.send(ins, p1, p2, [opts, pseudoOut]);
+
+        data_offset += 32;
+      }
+    }
+
+    // ======  Aout, Bout, AKout, C, v, k ======
+    // where k is the mask
+    // and v is the amount
+    // Aout, Bout is the receiver main  view/spend public keys
+    // keccak: 2nd group generator, such H = h.G and keccak is unknown
+    // C is the commitment to v where Cv = k.G + v.H
+    // monero_apdu_mlsag_prehash_update
+    let kv_offset = data_offset;
+    let C_offset = kv_offset + 32 * 2 * outputs_size;
+    for (let i = 0; i < outputs_size; i++) {
+      const outKeys = this.key_map.find(outPk[i].dest);
+      if (!outKeys) {
+        throw Error(`Pout not found: ${outPk[i].dest} `);
+      }
+
+      const ins = INS.VALIDATE;
+      const p1 = 0x02;
+      const p2 = i + 0x01;
+      const opts = i === outputs_size - 1 ? 0x00 : 0x80;
+
+      let data_buf: any[] = [opts];
+
+      // why is this conditional even needed? We checked for this above
+      if (outKeys) {
+        data_buf = [
+          data_buf,
+          ...[outKeys.is_subaddress, outKeys.Aout, outKeys.Bout, outKeys.AKout],
+        ];
+      } else {
+        // dummy: is_subaddress Aout Bout AKout
+        const zeroKey = this.hexString();
+        data_buf = [
+          data_buf,
+          ...[this.hexString(0x00, 1), zeroKey, zeroKey, zeroKey],
+        ];
+      }
+
+      // C
+      data_buf.push(data.slice(C_offset, C_offset + 32).toString('hex'));
+      C_offset += 32;
+
+      // k
+      data_buf.push(data.slice(kv_offset, kv_offset + 32).toString('hex'));
+      kv_offset += 32;
+
+      //v
+      data_buf.push(data.slice(kv_offset, kv_offset + 32).toString('hex'));
+      kv_offset += 32;
+
+      await this.send(ins, p1, p2, data_buf);
+    }
+
+    // ======   C[], message, proof======
+    let _i = 0;
+    C_offset = kv_offset;
+    for (_i = 0; _i < outputs_size; _i++) {
+      const ins = INS.VALIDATE;
+      const p1 = 0x03;
+      const p2 = _i + 0x01;
+      const opts = 0x80;
+
+      // C
+      const C = data.slice(C_offset, C_offset + 32).toString('hex');
+      C_offset += 32;
+
+      await this.send(ins, p1, p2, [opts, C]);
+    }
+
+    const [prehash] = await this.send(
+      INS.VALIDATE,
+      0x03,
+      _i + 0x01,
+      [0x00, hashes[0], hashes[2]],
+      [32],
+    );
+    return prehash;
+  }
+
+  // #endregion TRANSACTION
 
   // #region Internal private methods
   private is_fake_view_key(viewKey: string) {
@@ -499,7 +811,7 @@ export default class XMR<T> {
    * @memberof XMR
    */
   private hexString(byteValue: number = 0x00, length: number = 32) {
-    return Buffer.from(Array(length).fill(byteValue)).toString('hex');
+    return Buffer.alloc(length, byteValue, 'hex').toString('hex');
   }
 
   /**
@@ -518,8 +830,16 @@ export default class XMR<T> {
     buffer: Buffer,
     endingIndicesToSliceAt: number[],
   ) {
-    function sliceBufToHex(buf: Buffer, start?: number, end?: number) {
-      return buf.slice(start, end).toString('hex');
+    function sliceBufToHex(buf: Buffer, start: number, end: number) {
+      // initialize a buffer of required size
+      // so we dont slice out of bounds if returned bytes
+      // is less than slice size
+
+      const zeroBuf = Buffer.alloc(end - start);
+      // copy data into zero buffer
+      buf.copy(zeroBuf);
+      // slice
+      return zeroBuf.slice(start, end).toString('hex');
     }
 
     return endingIndicesToSliceAt.reduce(

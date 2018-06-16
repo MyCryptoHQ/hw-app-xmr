@@ -40,6 +40,7 @@ type CtKeyM = CtKeyV[];
 type Key = PublicKey | SecretKey;
 type KeyV = Key[];
 type KeyM = KeyV[];
+type Hash8 = string; // 8 bytes payment id
 // cryptonote_basic
 interface IAccountKeys {
   m_account_address: PublicAddress;
@@ -342,14 +343,14 @@ export interface Device {
    * @param {string} paymentId
    * @param {string} public_key Kv
    * @param {string} secret_key r
-   * @returns {Promise<string>} encrypted payment id = XOR (Hn( generate_key_derivation(r, Kv) , ENCRYPTED_PAYMENT_ID_TAIL), paymentId)
+   * @returns {Promise<Hash8>} encrypted payment id = XOR (Hn( generate_key_derivation(r, Kv) , ENCRYPTED_PAYMENT_ID_TAIL), paymentId)
    * @memberof Device
    */
   encrypt_payment_id(
     paymentId: string,
     public_key: string,
     secret_key: string,
-  ): Promise<string>;
+  ): Promise<Hash8>;
 
   /**
    *
@@ -357,21 +358,22 @@ export interface Device {
    * @param {string} paymentId
    * @param {string} public_key
    * @param {string} secret_key
-   * @returns {Promise<string>} Decrypted payment id = encrypt_payment_id(payment_id, public_key, secret_key) since its a XOR operation
+   * @returns {Promise<Hash8>} Decrypted payment id = encrypt_payment_id(payment_id, public_key, secret_key) since its a XOR operation
    * @memberof Device
    */
   decrypt_payment_id(
     paymentId: string,
     public_key: string,
     secret_key: string,
-  ): Promise<string>;
+  ): Promise<Hash8>;
 
   /**
    *
    * @description Elliptic Curve Diffie Helman: encodes the amount b and mask a
    * where C= aG + bH
    * @param {EcdhTuple} unmasked The unmasked ecdh tuple to encode using the shared secret
-   * @param {string} sharedSec e.g sharedSec = derivation_to_scalar(rKv,t)
+   * @param {string} sharedSec e.g sharedSec = derivation_to_scalar(rKv,t) where Kv is the recipients
+   * public view key
    * @returns {Promise<EcdhTuple>}
    * @memberof Device
    */
@@ -382,7 +384,7 @@ export interface Device {
    * @description Elliptic Curve Diffie Helman: decodes the amount b and mask a
    * where C= aG + bH
    * @param {EcdhTuple} masked The masked ecdh tuple to decude using the shared secret
-   * @param {SecretKey} sharedSec e.g sharedSec = derivation_to_scalar(rKv,t)
+   * @param {SecretKey} sharedSec e.g sharedSec = derivation_to_scalar(rKv | rG.kv ,t)
    * @returns {Promise<EcdhTuple>}
    * @memberof Device
    */
@@ -390,7 +392,7 @@ export interface Device {
 
   /**
    * @description store keys during construct_tx_with_tx_key to be later used during genRct ->  mlsag_prehash
-   * @param {PublicKey} aOut
+   * @param {PublicKey} Aout
    * @param {PublicKey} Bout
    * @param {boolean} is_subaddress
    * @param {number} real_output_index
@@ -400,13 +402,13 @@ export interface Device {
    * @memberof Device
    */
   add_output_key_mapping(
-    aOut: PublicKey,
+    Aout: PublicKey,
     Bout: PublicKey,
     is_subaddress: boolean,
     real_output_index: number,
     amount_key: Key,
     out_eph_public_key: PublicKey,
-  ): Promise<boolean>;
+  ): boolean;
 
   /**
    *
