@@ -39,7 +39,6 @@ interface IABPKeys {
   Aout: Key;
   Bout: Key;
   is_subaddress: boolean;
-
   index: number; // size_t
   Pout: Key; // search by this property
   AKout: Key;
@@ -735,23 +734,13 @@ export default class XMR<T> {
       const p1 = 0x02;
       const p2 = i + 0x01;
       const opts = i === outputs_size - 1 ? 0x00 : 0x80;
-
-      let data_buf: any[] = [opts];
-
-      // why is this conditional even needed? We checked for this above
-      if (outKeys) {
-        data_buf = [
-          data_buf,
-          ...[outKeys.is_subaddress, outKeys.Aout, outKeys.Bout, outKeys.AKout],
-        ];
-      } else {
-        // dummy: is_subaddress Aout Bout AKout
-        const zeroKey = this.hexString();
-        data_buf = [
-          data_buf,
-          ...[this.hexString(0x00, 1), zeroKey, zeroKey, zeroKey],
-        ];
-      }
+      const data_buf: any[] = [
+        opts,
+        outKeys.is_subaddress,
+        outKeys.Aout,
+        outKeys.Bout,
+        outKeys.AKout,
+      ];
 
       // C
       data_buf.push(data.slice(C_offset, C_offset + 32).toString('hex'));
