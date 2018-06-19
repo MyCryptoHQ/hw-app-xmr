@@ -701,7 +701,6 @@ export default class XMR<T> {
     // pseudoOuts
     if (type === RCT.RCTTypeSimple || type === RCT.RCTTypeSimpleBulletproof) {
       for (let i = 0; i < inputs_size; i++) {
-        const ins = INS.VALIDATE;
         const p1 = 0x01;
         const p2 = i + 0x02;
         const opts = i === inputs_size - 1 ? 0x00 : 0x80;
@@ -710,7 +709,7 @@ export default class XMR<T> {
           .slice(data_offset, data_offset + 32)
           .toString('hex');
 
-        await this.send(ins, p1, p2, [opts, pseudoOut]);
+        await this.send(INS.VALIDATE, p1, p2, [opts, pseudoOut]);
 
         data_offset += 32;
       }
@@ -731,7 +730,6 @@ export default class XMR<T> {
         throw Error(`Pout not found: ${outPk[i].dest} `);
       }
 
-      const ins = INS.VALIDATE;
       const p1 = 0x02;
       const p2 = i + 0x01;
       const opts = i === outputs_size - 1 ? 0x00 : 0x80;
@@ -755,14 +753,13 @@ export default class XMR<T> {
       data_buf.push(data.slice(kv_offset, kv_offset + 32).toString('hex'));
       kv_offset += 32;
 
-      await this.send(ins, p1, p2, data_buf);
+      await this.send(INS.VALIDATE, p1, p2, data_buf);
     }
 
     // ======   C[], message, proof======
     let _i = 0;
     C_offset = kv_offset;
     for (_i = 0; _i < outputs_size; _i++) {
-      const ins = INS.VALIDATE;
       const p1 = 0x03;
       const p2 = _i + 0x01;
       const opts = 0x80;
@@ -771,7 +768,7 @@ export default class XMR<T> {
       const C = data.slice(C_offset, C_offset + 32).toString('hex');
       C_offset += 32;
 
-      await this.send(ins, p1, p2, [opts, C]);
+      await this.send(INS.VALIDATE, p1, p2, [opts, C]);
     }
 
     const [prehash] = await this.send(
