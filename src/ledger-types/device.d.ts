@@ -56,8 +56,6 @@ interface ISubaddressIndex {
 }
 
 // device.hpp
-// let kv, ks = private view and spend keys
-// let Kv, Ks = public view and spend keys
 
 export interface Device {
   /* ======================================================================= */
@@ -331,8 +329,8 @@ export interface Device {
 
   /**
    *
-   * @description First step of creating a transaction, returns tPromise<he secret tx ke>y
-   * @returns {Promise<SecretKey>}
+   * @description First step of creating a transaction
+   * @returns {Promise<SecretKey>} A randomly generated spk
    * @memberof Device
    */
   open_tx(): Promise<SecretKey>;
@@ -412,7 +410,7 @@ export interface Device {
 
   /**
    *
-   * @description Compute the mlsag prehash
+   * @description Compute the mlsag prehash, also known as the message to be signed
    * @param {string} blob
    * @param {number} inputs_size
    * @param {number} outputs_size
@@ -431,7 +429,7 @@ export interface Device {
 
   /**
    *
-   * @description To be filled in
+   * @description Generate the matrix ring parameters
    * @param {Key} H
    * @param {Key} xx
    * @returns {Promise<{ a: Key, aG: Key, aHP: Key, II: Key }>}
@@ -444,7 +442,7 @@ export interface Device {
 
   /**
    *
-   * @description To be filled in
+   * @description Generate the matrix ring parameters
    * @returns {Promise<{ a: Key, aG: Key }>}
    * @memberof Device
    */
@@ -467,6 +465,7 @@ export interface Device {
    * @param {KeyV} alpha
    * @param {number} rows
    * @param {number} dsRows
+   * @param {KeyV} ss
    * @returns {Promise<KeyV>} ss
    * @memberof Device
    */
@@ -476,6 +475,7 @@ export interface Device {
     alpha: KeyV,
     rows: number,
     dsRows: number,
+    ss: KeyV,
   ): Promise<KeyV>;
 
   /**
