@@ -29,6 +29,7 @@ interface InjectedFunctions {
   generate_chacha_key_prehashed: AnyFunc;
   derive_subaddress_public_key: AnyFunc;
   generate_key_derivation: AnyFunc;
+  sc_mulsub: AnyFunc;
   // all this does is typecast crypto::private_key -> rct::key
   pk2rct: AnyFunc;
 }
@@ -781,6 +782,114 @@ export default class XMR<T> {
       [32],
     );
     return prehash;
+  }
+  /**
+   *
+   * @description Generate the matrix ring parameters
+   * @param {Key} H
+   * @param {Key} xx
+   * @returns {Promise<{ a: Key, aG: Key, aHP: Key, II: Key }>}
+   * @memberof Device
+   */
+  public async mlsag_prepare(
+    H: Key,
+    xx: Key,
+  ): Promise<{ a: Key; aG: Key; aHP: Key; II: Key }>;
+
+  /**
+   *
+   * @description Generate the matrix ring parameters
+   * @returns {Promise<{ a: Key, aG: Key }>}
+   * @memberof Device
+   */
+  public async mlsag_prepare(): Promise<{ a: Key; aG: Key }>;
+
+  public async mlsag_prepare(H?: Key, xx?: Key) {
+    if (!H || !xx) {
+      const [a, aG] = await this.send(INS.MLSAG, 0x01, 0x00, [0x00], [32, 64]);
+      return { a, aG };
+    } else {
+      // a -> alpha -> one time secret key for tx
+      // aG -> alpha.G -> one time public key for tx
+      const [a, aG, aHP, II] = await this.send(
+        INS.MLSAG,
+        0x01,
+        0x00,
+        [0x00, H, xx],
+        [32, 64, 96, 128],
+      );
+      return { a, aG, aHP, II };
+    }
+  }
+
+  public async mlsag_hash(long_message: KeyV): Promise<Key> {
+    // cnt is size_t
+    const cnt = long_message.length;
+    let res: string = '';
+    for (let i = 0; i < cnt; i++) {
+      [res] = await this.send(
+        INS.MLSAG,
+        0x02,
+        i + 0x01,
+        [i === cnt - 1 ? 0x00 : 0x80, long_message[i]],
+        [32],
+      );
+    }
+
+    if (!res) {
+      throw Error('Return value of last exchange is empty string');
+    }
+
+    return res;
+  }
+
+  public async mlsag_sign(
+    c: Key,
+    xx: KeyV,
+    alpha: KeyV,
+    rows: number,
+    dsRows: number,
+    ss: KeyV,
+  ): Promise<KeyV> {
+    if (dsRows >= rows) {
+      throw Error('dsRows greater than rows');
+    }
+    if (xx.length !== rows) {
+      throw Error('xx size does not match rows');
+    }
+    if (alpha.length !== rows) {
+      throw Error('alpha size does not match rows');
+    }
+    if (ss.length !== rows) {
+      throw Error('ss size does not match rows');
+    }
+
+    const ssRet: KeyV = [];
+
+    for (let j = 0; j < dsRows; j++) {
+      // ss[j]
+      const [ssj] = await this.send(
+        INS.MLSAG,
+        0x03,
+        j + 1,
+        [j === dsRows - 1 ? 0x80 : 0x00, xx[j], alpha[j]],
+        [32],
+      );
+      ssRet.push(ssj);
+    }
+
+    for (let j = dsRows; j < rows; j++) {
+      // sc_mulsub(const unsigned char *a, const unsigned char *b, const unsigned char *c)  -> unsigned char *s
+      // c - a.b mod l
+      ssRet[j] = this.extern.sc_mulsub(c, xx[j], alpha[j]);
+    }
+
+    return ssRet;
+  }
+
+  public async close_tx(): Promise<boolean> {
+    await this.send(INS.CLOSE_TX, 0x00, 0x00, [0x00]);
+    return true;
   }
 
   // #endregion TRANSACTION
